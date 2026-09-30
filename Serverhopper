@@ -1,3 +1,8 @@
+-- ============================================================
+-- SAFYRA SERVER HOPPER v3.1
+-- Autor: Kevin | Discord: _.kevib._
+-- ============================================================
+
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
@@ -5,278 +10,810 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local PlaceId = game.PlaceId
 
--- GUI Creation
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SafyraHubGUI"
-ScreenGui.ResetOnSpawn = false
+local COR_BG = Color3.fromRGB(15, 15, 22)
+local COR_BG_BTN = Color3.fromRGB(30, 30, 42)
+local COR_BTN_STROKE = Color3.fromRGB(100, 100, 120)
+local COR_ON = Color3.fromRGB(50, 230, 140)
+local COR_ON_STROKE = Color3.fromRGB(120, 255, 170)
+local COR_ACAO = Color3.fromRGB(138, 43, 226)
+local COR_ACAO_STROKE = Color3.fromRGB(180, 80, 255)
 
-if syn and syn.protect_gui then
-    syn.protect_gui(ScreenGui)
-    ScreenGui.Parent = game.CoreGui
-elseif gethui then
+local DISCORD_LINK = "https://discord.gg/dDqdH8tJdM"
+
+-- ============================================================
+-- COPIA DISCORD ASSIM QUE EXECUTA
+-- ============================================================
+task.spawn(function()
+    task.wait(1)
+    local ok = false
+    if setclipboard then ok = pcall(setclipboard, DISCORD_LINK)
+    elseif toclipboard then ok = pcall(toclipboard, DISCORD_LINK) end
+    if ok then print("[HOPPER] Discord copiado: " .. DISCORD_LINK) end
+end)
+
+-- ============================================================
+-- NOTIFICAÇÃO
+-- ============================================================
+local notifGui = Instance.new("ScreenGui")
+notifGui.Name = "HopperNotif"
+notifGui.ResetOnSpawn = false
+notifGui.IgnoreGuiInset = true
+notifGui.DisplayOrder = 6000
+notifGui.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+
+local notifFrame = Instance.new("Frame", notifGui)
+notifFrame.Size = UDim2.new(0, 260, 0, 46)
+notifFrame.Position = UDim2.new(0.5, -130, 0.5, -120)
+notifFrame.BackgroundColor3 = COR_BG
+notifFrame.BackgroundTransparency = 0.1
+notifFrame.BorderSizePixel = 0
+notifFrame.Visible = false
+Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 10)
+local notifStroke = Instance.new("UIStroke", notifFrame)
+notifStroke.Color = COR_ACAO; notifStroke.Thickness = 2
+
+local notifLabel = Instance.new("TextLabel", notifFrame)
+notifLabel.Size = UDim2.new(1, -20, 1, 0)
+notifLabel.Position = UDim2.new(0, 10, 0, 0)
+notifLabel.BackgroundTransparency = 1
+notifLabel.Text = ""
+notifLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+notifLabel.Font = Enum.Font.GothamBold
+notifLabel.TextSize = 13
+notifLabel.TextWrapped = true
+
+local notifThread = 0
+local function mostrarNotif(texto, duracao)
+    duracao = duracao or 2
+    notifThread = notifThread + 1
+    local myThread = notifThread
+    notifLabel.Text = texto
+    notifFrame.Visible = true
+    task.delay(duracao, function()
+        if myThread == notifThread then notifFrame.Visible = false end
+    end)
+end
+
+-- ============================================================
+-- UI PRINCIPAL
+-- ============================================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SafyraHopper"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 1000
+
+if gethui then
     ScreenGui.Parent = gethui()
+elseif syn and syn.protect_gui then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = game:GetService("CoreGui")
 else
-    ScreenGui.Parent = game.CoreGui
+    ScreenGui.Parent = game:GetService("CoreGui")
 end
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+MainFrame.Size = UDim2.new(0, 340, 0, 440)
+MainFrame.Position = UDim2.new(0.5, -170, 0.5, -220)
+MainFrame.BackgroundColor3 = COR_BG
+MainFrame.BackgroundTransparency = 1
 MainFrame.BorderSizePixel = 0
-MainFrame.Position = UDim2.new(0.5, -145, 0.5, -110)
-MainFrame.Size = UDim2.new(0, 290, 0, 220)
 MainFrame.Active = true
 MainFrame.Draggable = true
-MainFrame.ClipsDescendants = true
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+MainFrame.ZIndex = 1
+MainFrame.Parent = ScreenGui
 
--- Header Background
-local TitleBar = Instance.new("Frame", MainFrame)
-TitleBar.Size = UDim2.new(1, 0, 0, 36)
-TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
-TitleBar.BorderSizePixel = 0
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 
--- Title Text
-local Title = Instance.new("TextLabel", TitleBar)
-Title.Size = UDim2.new(0, 122, 1, 0)
-Title.Position = UDim2.new(0, 8, 0, 0)
-Title.BackgroundTransparency = 1
-Title.Font = Enum.Font.GothamBold
-Title.Text = "Safyra Hub"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 12
-Title.TextXAlignment = Enum.TextXAlignment.Left
+local bgImage = Instance.new("ImageLabel")
+bgImage.Size = UDim2.new(1, 0, 1, 0)
+bgImage.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+bgImage.BackgroundTransparency = 0
+bgImage.Image = "rbxassetid://117944324444129"
+bgImage.ImageTransparency = 0.15
+bgImage.ScaleType = Enum.ScaleType.Crop
+bgImage.ZIndex = 2
+bgImage.Parent = MainFrame
+Instance.new("UICorner", bgImage).CornerRadius = UDim.new(0, 12)
 
--- Credit Text (Right of Title)
-local Credit = Instance.new("TextLabel", TitleBar)
-Credit.Size = UDim2.new(0, 110, 1, 0)
-Credit.Position = UDim2.new(0, 133, 0, 0)
-Credit.BackgroundTransparency = 1
-Credit.Font = Enum.Font.Gotham
-Credit.Text = "Safyra Hub"
-Credit.TextColor3 = Color3.fromRGB(160, 160, 180)
-Credit.TextSize = 9
-Credit.TextXAlignment = Enum.TextXAlignment.Left
+local uiStroke = Instance.new("UIStroke", MainFrame)
+uiStroke.Color = COR_ACAO; uiStroke.Thickness = 2; uiStroke.ZIndex = 3
 
--- Red Box Close Button (X Button)
-local CloseBtn = Instance.new("TextButton", TitleBar)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-CloseBtn.BorderSizePixel = 0
-CloseBtn.Position = UDim2.new(1, -26, 0, 7)
-CloseBtn.Size = UDim2.new(0, 20, 0, 20)
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.TextSize = 11
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 4)
-CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -50, 0, 35); titleLabel.Position = UDim2.new(0, 12, 0, 4)
+titleLabel.BackgroundTransparency = 1; titleLabel.Text = "Server Hopper"
+titleLabel.TextColor3 = Color3.fromRGB(255, 240, 255); titleLabel.TextSize = 18
+titleLabel.Font = Enum.Font.GothamBlack; titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0); titleLabel.TextStrokeTransparency = 0.3
+titleLabel.ZIndex = 10; titleLabel.Parent = MainFrame
 
--- Toggle / Hide Button
-local ToggleBtn = Instance.new("TextButton", TitleBar)
-ToggleBtn.BackgroundTransparency = 1
-ToggleBtn.Position = UDim2.new(1, -50, 0, 7)
-ToggleBtn.Size = UDim2.new(0, 20, 0, 20)
-ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.Text = "—"
-ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-ToggleBtn.TextSize = 13
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 26, 0, 26); minBtn.Position = UDim2.new(1, -36, 0, 6)
+minBtn.BackgroundColor3 = COR_ACAO; minBtn.BackgroundTransparency = 0.1
+minBtn.Text = "-"; minBtn.TextColor3 = Color3.fromRGB(255, 255, 255); minBtn.TextSize = 16
+minBtn.Font = Enum.Font.GothamBold; minBtn.BorderSizePixel = 0; minBtn.ZIndex = 10
+minBtn.Parent = MainFrame
+Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
 
-local isHidden = false
-ToggleBtn.MouseButton1Click:Connect(function()
-    isHidden = not isHidden
-    if isHidden then
-        MainFrame:TweenSize(UDim2.new(0, 290, 0, 36), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.25, true)
-        ToggleBtn.Text = "+"
+-- ============================================================
+-- ABAS
+-- ============================================================
+local tabNames = {"Servers", "Amigos", "Config"}
+local tabButtons, tabContainers = {}, {}
+local tabW = 1 / #tabNames - 0.008
+
+for i, name in ipairs(tabNames) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(tabW, -1, 0, 22)
+    btn.Position = UDim2.new((i-1) * (tabW + 0.008), 4, 0, 42)
+    btn.BackgroundColor3 = (i == 1) and COR_ACAO or COR_BG_BTN
+    btn.BackgroundTransparency = (i == 1) and 0.1 or 0.3
+    btn.Text = name
+    btn.TextColor3 = (i == 1) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 200)
+    btn.TextSize = 10
+    btn.Font = (i == 1) and Enum.Font.GothamBold or Enum.Font.GothamSemibold
+    btn.BorderSizePixel = 0; btn.ZIndex = 10; btn.Parent = MainFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    tabButtons[name] = btn
+
+    local container = Instance.new("ScrollingFrame")
+    container.Size = UDim2.new(1, -10, 1, -110); container.Position = UDim2.new(0, 5, 0, 70)
+    container.BackgroundTransparency = 1; container.BorderSizePixel = 0
+    container.ScrollBarThickness = 3; container.ScrollBarImageColor3 = COR_ACAO
+    container.CanvasSize = UDim2.new(0, 0, 0, 0); container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    container.Visible = (i == 1); container.ZIndex = 10; container.Parent = MainFrame
+    tabContainers[name] = container
+end
+
+local function switchTab(name)
+    for n, btn in pairs(tabButtons) do
+        local ativo = (n == name)
+        btn.BackgroundColor3 = ativo and COR_ACAO or COR_BG_BTN
+        btn.BackgroundTransparency = ativo and 0.1 or 0.3
+        btn.TextColor3 = ativo and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 200)
+        btn.Font = ativo and Enum.Font.GothamBold or Enum.Font.GothamSemibold
+        tabContainers[n].Visible = ativo
+    end
+end
+
+for name, btn in pairs(tabButtons) do
+    btn.MouseButton1Click:Connect(function() switchTab(name) end)
+end
+
+local function makeBtn(parent, y, text)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -10, 0, 32); b.Position = UDim2.new(0, 5, 0, y)
+    b.BackgroundColor3 = COR_BG_BTN
+    b.Text = ""; b.BorderSizePixel = 0
+    b.AutoButtonColor = false; b.ZIndex = 11; b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    local s = Instance.new("UIStroke", b); s.Color = COR_BTN_STROKE; s.Thickness = 1; s.Transparency = 0.5
+    local tx = Instance.new("TextLabel", b)
+    tx.Size = UDim2.new(1, 0, 1, 0); tx.BackgroundTransparency = 1
+    tx.Text = text; tx.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tx.Font = Enum.Font.GothamBold; tx.TextSize = 12; tx.ZIndex = 12
+    return b, s, tx
+end
+
+local function setBtnOn(btn, stroke, on)
+    if on then
+        btn.BackgroundColor3 = COR_ON
+        stroke.Color = COR_ON_STROKE
     else
-        MainFrame:TweenSize(UDim2.new(0, 290, 0, 220), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.25, true)
-        ToggleBtn.Text = "—"
+        btn.BackgroundColor3 = COR_BG_BTN
+        stroke.Color = COR_BTN_STROKE
     end
-end)
+end
 
--- Current Player Count Label
-local NowLabel = Instance.new("TextLabel", MainFrame)
-NowLabel.Position = UDim2.new(0, 10, 0, 44)
-NowLabel.Size = UDim2.new(1, -20, 0, 22)
-NowLabel.BackgroundTransparency = 1
-NowLabel.Font = Enum.Font.GothamBold
-NowLabel.TextXAlignment = Enum.TextXAlignment.Left
-NowLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
-NowLabel.TextSize = 13
+-- ============================================================
+-- HELPERS
+-- ============================================================
+local REGION_ICON = {
+    ["us-east"] = "🇺🇸", ["us-west"] = "🇺🇸", ["us-central"] = "🇺🇸",
+    ["eu-west"] = "🇪🇺", ["eu-central"] = "🇪🇺", ["eu-east"] = "🇪🇺",
+    ["ap-northeast"] = "🇯🇵", ["ap-southeast"] = "🇸🇬", ["ap-south"] = "🇮🇳",
+    ["sa-east"] = "🇧🇷",
+}
 
--- Status Display Label
-local StatusLabel = Instance.new("TextLabel", MainFrame)
-StatusLabel.Position = UDim2.new(0, 10, 0, 70)
-StatusLabel.Size = UDim2.new(1, -20, 0, 30)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-StatusLabel.TextSize = 12
-StatusLabel.TextWrapped = true
+local function regionIcon(reg)
+    if not reg then return "🌐" end
+    return REGION_ICON[reg] or "🌐"
+end
 
--- Max Player Threshold Label
-local MaxLabel = Instance.new("TextLabel", MainFrame)
-MaxLabel.Position = UDim2.new(0, 10, 0, 105)
-MaxLabel.Size = UDim2.new(1, -20, 0, 18)
-MaxLabel.BackgroundTransparency = 1
-MaxLabel.Font = Enum.Font.Gotham
-MaxLabel.TextXAlignment = Enum.TextXAlignment.Left
-MaxLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
-MaxLabel.TextSize = 10
-MaxLabel.Text = "Press join again if you were sent to the wrong server"
+local function pingColor(ping)
+    ping = tonumber(ping) or 0
+    if ping <= 0 then return Color3.fromRGB(180, 180, 180) end
+    if ping < 100 then return Color3.fromRGB(100, 255, 150) end
+    if ping < 200 then return Color3.fromRGB(255, 220, 100) end
+    return Color3.fromRGB(255, 100, 100)
+end
 
-local MaxBox = Instance.new("TextBox", MainFrame)
-MaxBox.Position = UDim2.new(0, 10, 0, 126)
-MaxBox.Size = UDim2.new(1, -20, 0, 28)
-MaxBox.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
-MaxBox.BorderSizePixel = 0
-MaxBox.Font = Enum.Font.GothamBold
-MaxBox.Text = "1"
-MaxBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-MaxBox.TextSize = 14
-MaxBox.ClearTextOnFocus = false
-Instance.new("UICorner", MaxBox).CornerRadius = UDim.new(0, 6)
-
--- Action Buttons
-local JoinBtn = Instance.new("TextButton", MainFrame)
-JoinBtn.Position = UDim2.new(0, 10, 0, 162)
-JoinBtn.Size = UDim2.new(0, 125, 0, 45)
-JoinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 180)
-JoinBtn.BorderSizePixel = 0
-JoinBtn.Font = Enum.Font.GothamBold
-JoinBtn.Text = "Join"
-JoinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-JoinBtn.TextSize = 13
-Instance.new("UICorner", JoinBtn).CornerRadius = UDim.new(0, 6)
-
-local AutoBtn = Instance.new("TextButton", MainFrame)
-AutoBtn.Position = UDim2.new(0, 145, 0, 162)
-AutoBtn.Size = UDim2.new(0, 135, 0, 45)
-AutoBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 70)
-AutoBtn.BorderSizePixel = 0
-AutoBtn.Font = Enum.Font.GothamBold
-AutoBtn.Text = "Auto Join: OFF"
-AutoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-AutoBtn.TextSize = 13
-Instance.new("UICorner", AutoBtn).CornerRadius = UDim.new(0, 6)
-
--- ==============================
--- LOGIC
--- ==============================
-
-local autoEnabled = false
-local autoThread = nil
-
--- Realtime player count monitor
-task.spawn(function()
-    while ScreenGui.Parent do
-        local count = #Players:GetPlayers()
-        NowLabel.Text = "Players in server: " .. count
-        task.wait(1)
-    end
-end)
-
-local function getRandomServer()
+-- ============================================================
+-- FETCH
+-- ============================================================
+local function fetchServers()
+    -- sortOrder Asc = menos players primeiro
     local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
     local ok, raw = pcall(function() return game:HttpGet(url) end)
     if not ok or not raw or raw == "" then return nil end
-
     local ok2, data = pcall(HttpService.JSONDecode, HttpService, raw)
-    if not ok2 or not data or not data.data or #data.data == 0 then return nil end
-
+    if not ok2 or not data or not data.data then return nil end
     local currentId = tostring(game.JobId)
-    local candidates = {}
+    local lista = {}
     for _, s in ipairs(data.data) do
-        if s.id and tostring(s.id) ~= currentId then
-            table.insert(candidates, tostring(s.id))
+        if s.id and tostring(s.id) ~= currentId and s.playing < s.maxPlayers then
+            table.insert(lista, {
+                id = tostring(s.id),
+                playing = s.playing or 0,
+                maxPlayers = s.maxPlayers or 0,
+                ping = s.ping or 0,
+                region = s.region or nil
+            })
+        end
+    end
+    table.sort(lista, function(a, b) return a.playing < b.playing end)
+    return lista
+end
+
+-- Verifica se um server específico tem vaga AGORA
+local function verificarVaga(serverId)
+    local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+    local ok, raw = pcall(function() return game:HttpGet(url) end)
+    if not ok or not raw then return false, nil end
+    local ok2, data = pcall(HttpService.JSONDecode, HttpService, raw)
+    if not ok2 or not data or not data.data then return false, nil end
+    for _, s in ipairs(data.data) do
+        if tostring(s.id) == tostring(serverId) then
+            return (s.playing or 0) < (s.maxPlayers or 0), {
+                id = tostring(s.id),
+                playing = s.playing or 0,
+                maxPlayers = s.maxPlayers or 0,
+                ping = s.ping or 0,
+                region = s.region or nil
+            }
+        end
+    end
+    return false, nil
+end
+
+-- Tenta teleportar pra vários candidatos até funcionar
+local function tentarTeleport(lista, maxTentativas)
+    maxTentativas = maxTentativas or 5
+    local tentativas = 0
+    for _, s in ipairs(lista) do
+        if tentativas >= maxTentativas then break end
+        tentativas = tentativas + 1
+
+        -- Re-check vaga
+        local temVaga, dados = verificarVaga(s.id)
+        if temVaga and dados then
+            mostrarNotif("Tentando " .. tentativas .. ": " .. dados.playing .. "/" .. dados.maxPlayers, 1.5)
+            local ok = pcall(function()
+                TeleportService:TeleportToPlaceInstance(PlaceId, dados.id, LocalPlayer)
+            end)
+            if ok then return true, dados end
+            task.wait(0.6)
+        end
+    end
+    return false, nil
+end
+
+-- ============================================================
+-- ABA SERVERS
+-- ============================================================
+local serversC = tabContainers["Servers"]
+
+local statusLabel = Instance.new("TextLabel", serversC)
+statusLabel.Size = UDim2.new(1, -10, 0, 36); statusLabel.Position = UDim2.new(0, 5, 0, 5)
+statusLabel.BackgroundColor3 = Color3.fromRGB(10, 10, 15); statusLabel.BackgroundTransparency = 0.3
+statusLabel.Text = "Pronto. Clica em ENTRAR NO MELHOR."
+statusLabel.TextColor3 = Color3.fromRGB(200, 220, 255)
+statusLabel.Font = Enum.Font.Gotham; statusLabel.TextSize = 11
+statusLabel.TextWrapped = true; statusLabel.ZIndex = 11
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+Instance.new("UICorner", statusLabel).CornerRadius = UDim.new(0, 6)
+local statusPad = Instance.new("UIPadding", statusLabel)
+statusPad.PaddingLeft = UDim.new(0, 8); statusPad.PaddingRight = UDim.new(0, 8)
+
+local filtroOpts = {
+    { label = "TODOS",        max = 999 },
+    { label = "0-1 PLAYER",   max = 1 },
+    { label = "0-3 PLAYERS",  max = 3 },
+    { label = "0-5 PLAYERS",  max = 5 },
+    { label = "0-10 PLAYERS", max = 10 },
+}
+local filtroIdx = 1
+
+local BtnFiltro, SFiltro, TFiltro = makeBtn(serversC, 47, "🎯 FILTRO: TODOS")
+local BtnEnter, SEnter, TEnter = makeBtn(serversC, 85, "▶ ENTRAR NO MELHOR")
+local BtnFetch, SFetch, TFetch = makeBtn(serversC, 123, "🔍 VER LISTA DE SERVIDORES")
+
+local serversList = Instance.new("Frame", serversC)
+serversList.Size = UDim2.new(1, -10, 0, 0); serversList.Position = UDim2.new(0, 5, 0, 163)
+serversList.BackgroundTransparency = 1; serversList.AutomaticSize = Enum.AutomaticSize.Y
+serversList.ZIndex = 11
+
+local currentServers = {}
+
+local function aplicarFiltro(lista)
+    local opt = filtroOpts[filtroIdx]
+    local filtrada = {}
+    for _, s in ipairs(lista) do
+        if s.playing <= opt.max then
+            table.insert(filtrada, s)
+        end
+    end
+    return filtrada
+end
+
+local function renderServers(lista)
+    for _, c in ipairs(serversList:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+    if not lista or #lista == 0 then return end
+    for i, s in ipairs(lista) do
+        local row = Instance.new("Frame", serversList)
+        row.Size = UDim2.new(1, 0, 0, 44); row.Position = UDim2.new(0, 0, 0, (i-1) * 48)
+        row.BackgroundColor3 = COR_BG_BTN; row.BorderSizePixel = 0
+        row.ZIndex = 11
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+        local rowStroke = Instance.new("UIStroke", row)
+        rowStroke.Color = COR_BTN_STROKE; rowStroke.Thickness = 1; rowStroke.Transparency = 0.5
+
+        local regIcon = Instance.new("TextLabel", row)
+        regIcon.Size = UDim2.new(0, 26, 1, 0); regIcon.Position = UDim2.new(0, 4, 0, 0)
+        regIcon.BackgroundTransparency = 1
+        regIcon.Text = regionIcon(s.region)
+        regIcon.TextSize = 18
+        regIcon.ZIndex = 12
+
+        local info = Instance.new("TextLabel", row)
+        info.Size = UDim2.new(1, -100, 0, 16); info.Position = UDim2.new(0, 32, 0, 5)
+        info.BackgroundTransparency = 1
+        info.Text = string.format("%d/%d players", s.playing, s.maxPlayers)
+        info.TextColor3 = (s.playing < s.maxPlayers) and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(255, 100, 100)
+        info.Font = Enum.Font.GothamBold; info.TextSize = 11
+        info.TextXAlignment = Enum.TextXAlignment.Left; info.ZIndex = 12
+
+        local ping = Instance.new("TextLabel", row)
+        ping.Size = UDim2.new(1, -100, 0, 14); ping.Position = UDim2.new(0, 32, 0, 22)
+        ping.BackgroundTransparency = 1
+        ping.Text = "ping " .. (s.ping or 0) .. (s.region and ("  •  " .. s.region) or "")
+        ping.TextColor3 = pingColor(s.ping)
+        ping.Font = Enum.Font.Gotham; ping.TextSize = 10
+        ping.TextXAlignment = Enum.TextXAlignment.Left; ping.ZIndex = 12
+
+        local joinBtn = Instance.new("TextButton", row)
+        joinBtn.Size = UDim2.new(0, 58, 0, 30); joinBtn.Position = UDim2.new(1, -66, 0.5, -15)
+        joinBtn.BackgroundColor3 = COR_ON; joinBtn.BorderSizePixel = 0
+        joinBtn.Text = "JOIN"; joinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        joinBtn.Font = Enum.Font.GothamBlack; joinBtn.TextSize = 11
+        joinBtn.AutoButtonColor = false; joinBtn.ZIndex = 12
+        Instance.new("UICorner", joinBtn).CornerRadius = UDim.new(0, 5)
+        local jbStroke = Instance.new("UIStroke", joinBtn)
+        jbStroke.Color = COR_ON_STROKE; jbStroke.Thickness = 1; jbStroke.Transparency = 0.3
+
+        joinBtn.MouseButton1Click:Connect(function()
+            joinBtn.Text = "..."
+            joinBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+
+            local temVaga, dados = verificarVaga(s.id)
+            if not temVaga or not dados then
+                joinBtn.Text = "CHEIO"
+                joinBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+                mostrarNotif("Server cheio. Tenta outro.", 2)
+                task.wait(1.5)
+                joinBtn.Text = "JOIN"
+                joinBtn.BackgroundColor3 = COR_ON
+                return
+            end
+
+            mostrarNotif("Entrando em " .. dados.playing .. "/" .. dados.maxPlayers .. "...", 1.5)
+            local ok = pcall(function()
+                TeleportService:TeleportToPlaceInstance(PlaceId, dados.id, LocalPlayer)
+            end)
+            if not ok then
+                joinBtn.Text = "ERRO"
+                joinBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+                task.wait(1.5)
+                joinBtn.Text = "JOIN"
+                joinBtn.BackgroundColor3 = COR_ON
+            end
+        end)
+    end
+    serversList.Size = UDim2.new(1, -10, 0, #lista * 48)
+end
+
+BtnFiltro.MouseButton1Click:Connect(function()
+    filtroIdx = filtroIdx + 1
+    if filtroIdx > #filtroOpts then filtroIdx = 1 end
+    local opt = filtroOpts[filtroIdx]
+    TFiltro.Text = "🎯 FILTRO: " .. opt.label
+    if #currentServers > 0 then renderServers(aplicarFiltro(currentServers)) end
+    mostrarNotif("Filtro: " .. opt.label, 1.5)
+end)
+
+-- ENTRAR NO MELHOR
+BtnEnter.MouseButton1Click:Connect(function()
+    TEnter.Text = "▶ PROCURANDO..."
+    statusLabel.Text = "Procurando o mais vazio..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+    task.wait(0.1)
+
+    local lista = fetchServers()
+    if not lista or #lista == 0 then
+        statusLabel.Text = "✗ Nenhum server com vaga. Tenta de novo."
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        TEnter.Text = "▶ ENTRAR NO MELHOR"
+        return
+    end
+
+    local filtrada = aplicarFiltro(lista)
+    if #filtrada == 0 then filtrada = lista end
+
+    statusLabel.Text = "Tentando teleportar (top 5 candidatos)..."
+    statusLabel.TextColor3 = Color3.fromRGB(120, 180, 255)
+
+    local sucesso, dados = tentarTeleport(filtrada, 5)
+    if not sucesso then
+        statusLabel.Text = "✗ Falha em todos. Server list tá desatualizada?"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    else
+        statusLabel.Text = "✓ Teleportando pra " .. dados.playing .. "/" .. dados.maxPlayers
+        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+    end
+    TEnter.Text = "▶ ENTRAR NO MELHOR"
+end)
+
+BtnFetch.MouseButton1Click:Connect(function()
+    TFetch.Text = "🔍 BUSCANDO..."
+    statusLabel.Text = "Buscando servidores..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+    task.wait(0.1)
+    local lista = fetchServers()
+    if not lista or #lista == 0 then
+        statusLabel.Text = "✗ Nenhum server com vaga disponível."
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        TFetch.Text = "🔍 VER LISTA DE SERVIDORES"
+        return
+    end
+    currentServers = lista
+    local filtrada = aplicarFiltro(lista)
+    statusLabel.Text = "✓ " .. #filtrada .. " servers com vaga. Clica JOIN."
+    statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+    TFetch.Text = "🔍 VER LISTA DE SERVIDORES"
+    renderServers(filtrada)
+end)
+
+-- ============================================================
+-- ABA AMIGOS
+-- ============================================================
+local amigosC = tabContainers["Amigos"]
+
+local amigosStatus = Instance.new("TextLabel", amigosC)
+amigosStatus.Size = UDim2.new(1, -10, 0, 36); amigosStatus.Position = UDim2.new(0, 5, 0, 5)
+amigosStatus.BackgroundColor3 = Color3.fromRGB(10, 10, 15); amigosStatus.BackgroundTransparency = 0.3
+amigosStatus.Text = "Clica em BUSCAR pra ver amigos no jogo."
+amigosStatus.TextColor3 = Color3.fromRGB(200, 220, 255)
+amigosStatus.Font = Enum.Font.Gotham; amigosStatus.TextSize = 11
+amigosStatus.TextWrapped = true; amigosStatus.ZIndex = 11
+amigosStatus.TextXAlignment = Enum.TextXAlignment.Left
+Instance.new("UICorner", amigosStatus).CornerRadius = UDim.new(0, 6)
+local amigosPad = Instance.new("UIPadding", amigosStatus)
+amigosPad.PaddingLeft = UDim.new(0, 8); amigosPad.PaddingRight = UDim.new(0, 8)
+
+local BtnAmigos, SAmigos, TAmigos = makeBtn(amigosC, 47, "🔎 BUSCAR AMIGOS NO JOGO")
+
+local amigosList = Instance.new("Frame", amigosC)
+amigosList.Size = UDim2.new(1, -10, 0, 0); amigosList.Position = UDim2.new(0, 5, 0, 87)
+amigosList.BackgroundTransparency = 1; amigosList.AutomaticSize = Enum.AutomaticSize.Y
+amigosList.ZIndex = 11
+
+local function getAmigos()
+    local amigos = {}
+    local cursor = ""
+    for i = 1, 4 do
+        local url = "https://friends.roblox.com/v1/users/" .. LocalPlayer.UserId .. "/friends?limit=50"
+        if cursor ~= "" then url = url .. "&cursor=" .. cursor end
+        local ok, raw = pcall(function() return game:HttpGet(url) end)
+        if not ok or not raw or raw == "" then break end
+        local ok2, data = pcall(HttpService.JSONDecode, HttpService, raw)
+        if not ok2 or not data or not data.data then break end
+        for _, a in ipairs(data.data) do
+            table.insert(amigos, { id = a.id, name = a.name, display = a.displayName })
+        end
+        cursor = data.nextPageCursor
+        if not cursor or cursor == "" then break end
+    end
+    return amigos
+end
+
+local function getPresencas(userIds)
+    if #userIds == 0 then return {} end
+    local ok, raw = pcall(function()
+        return game:HttpPost("https://presence.roblox.com/v1/presence/users",
+            HttpService:JSONEncode({ userIds = userIds }))
+    end)
+    if not ok or not raw or raw == "" then return {} end
+    local ok2, data = pcall(HttpService.JSONDecode, HttpService, raw)
+    if not ok2 or not data or not data.userPresences then return {} end
+    local map = {}
+    for _, p in ipairs(data.userPresences) do
+        map[p.userId] = p
+    end
+    return map
+end
+
+BtnAmigos.MouseButton1Click:Connect(function()
+    TAmigos.Text = "🔎 BUSCANDO..."
+    amigosStatus.Text = "Buscando amigos..."
+    amigosStatus.TextColor3 = Color3.fromRGB(255, 200, 50)
+    task.wait(0.1)
+
+    for _, c in ipairs(amigosList:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+
+    local amigos = getAmigos()
+    if #amigos == 0 then
+        amigosStatus.Text = "✗ Não consegui buscar. HTTP Requests ligado?"
+        amigosStatus.TextColor3 = Color3.fromRGB(255, 100, 100)
+        TAmigos.Text = "🔎 BUSCAR AMIGOS NO JOGO"
+        return
+    end
+
+    local ids = {}
+    for _, a in ipairs(amigos) do table.insert(ids, a.id) end
+
+    local presencas = {}
+    for i = 1, #ids, 50 do
+        local bloco = {}
+        for j = i, math.min(i + 49, #ids) do
+            table.insert(bloco, ids[j])
+        end
+        local map = getPresencas(bloco)
+        for k, v in pairs(map) do presencas[k] = v end
+    end
+
+    local noJogo = {}
+    for _, a in ipairs(amigos) do
+        local p = presencas[a.id]
+        if p and p.userPresenceType == 2 and p.placeId == PlaceId then
+            table.insert(noJogo, {
+                id = a.id,
+                name = a.name,
+                display = a.display,
+                gameId = p.gameId,
+                lastLocation = p.lastLocation
+            })
         end
     end
 
-    if #candidates == 0 then return nil end
-
-    return candidates[math.random(1, #candidates)]
-end
-
-local function joinOnce()
-    local threshold = math.max(1, math.floor(tonumber(MaxBox.Text) or 1))
-    local currentCount = #Players:GetPlayers()
-
-    if currentCount <= threshold then
-        StatusLabel.Text = "✓ Current server has " .. currentCount .. " player(s). No join needed."
-        StatusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
-        return false
+    if #noJogo == 0 then
+        amigosStatus.Text = "Nenhum amigo no jogo agora (" .. #amigos .. " checados)."
+        amigosStatus.TextColor3 = Color3.fromRGB(255, 200, 50)
+        TAmigos.Text = "🔎 BUSCAR AMIGOS NO JOGO"
+        return
     end
 
-    StatusLabel.Text = "Server has " .. currentCount .. " players. Searching for another server..."
-    StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-    task.wait(0.5)
+    amigosStatus.Text = "✓ " .. #noJogo .. " amigo(s) no jogo. Clica JOIN."
+    amigosStatus.TextColor3 = Color3.fromRGB(100, 255, 150)
+    TAmigos.Text = "🔎 BUSCAR AMIGOS NO JOGO"
 
-    local serverId = getRandomServer()
-    if not serverId then
-        StatusLabel.Text = "Failed to fetch server list. Check HTTP Requests in executor."
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-        return false
+    for i, a in ipairs(noJogo) do
+        local row = Instance.new("Frame", amigosList)
+        row.Size = UDim2.new(1, 0, 0, 44); row.Position = UDim2.new(0, 0, 0, (i-1) * 48)
+        row.BackgroundColor3 = COR_BG_BTN; row.BorderSizePixel = 0
+        row.ZIndex = 11
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+        local rowStroke = Instance.new("UIStroke", row)
+        rowStroke.Color = Color3.fromRGB(120, 200, 255); rowStroke.Thickness = 1; rowStroke.Transparency = 0.3
+
+        local nome = Instance.new("TextLabel", row)
+        nome.Size = UDim2.new(1, -80, 0, 18); nome.Position = UDim2.new(0, 10, 0, 5)
+        nome.BackgroundTransparency = 1
+        nome.Text = a.display ~= "" and (a.display .. " (@" .. a.name .. ")") or a.name
+        nome.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nome.Font = Enum.Font.GothamBold; nome.TextSize = 11
+        nome.TextXAlignment = Enum.TextXAlignment.Left; nome.ZIndex = 12
+
+        local loc = Instance.new("TextLabel", row)
+        loc.Size = UDim2.new(1, -80, 0, 14); loc.Position = UDim2.new(0, 10, 0, 23)
+        loc.BackgroundTransparency = 1
+        loc.Text = "🎮 " .. (a.lastLocation or "?")
+        loc.TextColor3 = Color3.fromRGB(150, 200, 255)
+        loc.Font = Enum.Font.Gotham; loc.TextSize = 10
+        loc.TextXAlignment = Enum.TextXAlignment.Left; loc.ZIndex = 12
+
+        local jb = Instance.new("TextButton", row)
+        jb.Size = UDim2.new(0, 58, 0, 30); jb.Position = UDim2.new(1, -66, 0.5, -15)
+        jb.BackgroundColor3 = COR_ON; jb.BorderSizePixel = 0
+        jb.Text = "JOIN"; jb.TextColor3 = Color3.fromRGB(255, 255, 255)
+        jb.Font = Enum.Font.GothamBlack; jb.TextSize = 11
+        jb.AutoButtonColor = false; jb.ZIndex = 12
+        Instance.new("UICorner", jb).CornerRadius = UDim.new(0, 5)
+        local jbS = Instance.new("UIStroke", jb)
+        jbS.Color = COR_ON_STROKE; jbS.Thickness = 1; jbS.Transparency = 0.3
+
+        jb.MouseButton1Click:Connect(function()
+            if not a.gameId or a.gameId == "" then
+                mostrarNotif("Sem gameId. Amigo em outro server.", 2)
+                return
+            end
+            jb.Text = "..."
+            jb.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+            mostrarNotif("Entrando no server do " .. a.name .. "...", 1.5)
+            local ok = pcall(function()
+                TeleportService:TeleportToPlaceInstance(PlaceId, a.gameId, LocalPlayer)
+            end)
+            if not ok then
+                jb.Text = "ERRO"
+                jb.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+                task.wait(1.5)
+                jb.Text = "JOIN"
+                jb.BackgroundColor3 = COR_ON
+            end
+        end)
     end
-
-    StatusLabel.Text = "Teleporting to another server..."
-    StatusLabel.TextColor3 = Color3.fromRGB(120, 180, 255)
-    task.wait(0.5)
-
-    local ok, err = pcall(function()
-        TeleportService:TeleportToPlaceInstance(PlaceId, serverId, LocalPlayer)
-    end)
-
-    if not ok then
-        StatusLabel.Text = "Teleport error: " .. tostring(err):sub(1, 60)
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-        return false
-    end
-
-    return true
-end
-
-JoinBtn.MouseButton1Click:Connect(function()
-    JoinBtn.Active = false
-    joinOnce()
-    task.wait(2)
-    JoinBtn.Active = true
+    amigosList.Size = UDim2.new(1, -10, 0, #noJogo * 48)
 end)
 
-AutoBtn.MouseButton1Click:Connect(function()
+-- ============================================================
+-- ABA CONFIG
+-- ============================================================
+local cfgC = tabContainers["Config"]
+
+local BtnAuto, SAuto, TAuto = makeBtn(cfgC, 5, "AUTO JOIN: OFF")
+local BtnLotar, SLotar, TLotar = makeBtn(cfgC, 45, "PULAR SE LOTAR: OFF")
+local BtnSkip, SSkip, TSkip = makeBtn(cfgC, 85, "PULAR PRO PRÓXIMO AGORA")
+local BtnDiscord, SDiscord, TDiscord = makeBtn(cfgC, 125, "📋 COPIAR DISCORD")
+
+local maxPlayersLabel = Instance.new("TextLabel", cfgC)
+maxPlayersLabel.Size = UDim2.new(1, -10, 0, 18); maxPlayersLabel.Position = UDim2.new(0, 5, 0, 165)
+maxPlayersLabel.BackgroundTransparency = 1
+maxPlayersLabel.Text = "LIMITE DE PLAYERS (AUTO/PULAR SE LOTAR):"
+maxPlayersLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+maxPlayersLabel.Font = Enum.Font.GothamBold; maxPlayersLabel.TextSize = 10
+maxPlayersLabel.TextXAlignment = Enum.TextXAlignment.Left; maxPlayersLabel.ZIndex = 11
+
+local maxPlayersBox = Instance.new("TextBox", cfgC)
+maxPlayersBox.Size = UDim2.new(1, -10, 0, 32); maxPlayersBox.Position = UDim2.new(0, 5, 0, 188)
+maxPlayersBox.BackgroundColor3 = COR_BG_BTN; maxPlayersBox.BorderSizePixel = 0
+maxPlayersBox.Text = "3"; maxPlayersBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+maxPlayersBox.Font = Enum.Font.GothamBold; maxPlayersBox.TextSize = 14
+maxPlayersBox.ClearTextOnFocus = false; maxPlayersBox.ZIndex = 11
+Instance.new("UICorner", maxPlayersBox).CornerRadius = UDim.new(0, 6)
+local mps = Instance.new("UIStroke", maxPlayersBox)
+mps.Color = COR_BTN_STROKE; mps.Thickness = 1; mps.Transparency = 0.5
+
+BtnDiscord.MouseButton1Click:Connect(function()
+    local ok = false
+    if setclipboard then ok = pcall(setclipboard, DISCORD_LINK)
+    elseif toclipboard then ok = pcall(toclipboard, DISCORD_LINK) end
+    if ok then mostrarNotif("Discord copiado!", 2.5)
+    else mostrarNotif("Link: discord.gg/dDqdH8tJdM", 4) end
+end)
+
+-- ============================================================
+-- LÓGICA
+-- ============================================================
+local autoEnabled = false
+local autoThread = nil
+
+local function pegarLimite()
+    return math.max(1, math.floor(tonumber(maxPlayersBox.Text) or 3))
+end
+
+local function joinMelhor()
+    local limite = pegarLimite()
+    local count = #Players:GetPlayers()
+
+    if count <= limite then
+        statusLabel.Text = "✓ Server atual tem " .. count .. " player(s)."
+        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+        return false
+    end
+
+    local lista = fetchServers()
+    if not lista or #lista == 0 then
+        statusLabel.Text = "✗ Nenhum server com vaga."
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        return false
+    end
+
+    local filtrada = aplicarFiltro(lista)
+    if #filtrada == 0 then filtrada = lista end
+
+    statusLabel.Text = "Tentando top 5 candidatos..."
+    statusLabel.TextColor3 = Color3.fromRGB(120, 180, 255)
+
+    local ok = tentarTeleport(filtrada, 5)
+    return ok
+end
+
+BtnAuto.MouseButton1Click:Connect(function()
     autoEnabled = not autoEnabled
+    setBtnOn(BtnAuto, SAuto, autoEnabled)
+    TAuto.Text = "AUTO JOIN: " .. (autoEnabled and "ON" or "OFF")
 
     if autoEnabled then
-        AutoBtn.Text = "Auto Join: ON"
-        AutoBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-
+        mostrarNotif("Auto Join ligado", 1.5)
         autoThread = task.spawn(function()
             while autoEnabled and ScreenGui.Parent do
-                local threshold = math.max(1, math.floor(tonumber(MaxBox.Text) or 1))
+                local limite = pegarLimite()
                 local count = #Players:GetPlayers()
-
-                if count <= threshold then
-                    StatusLabel.Text = "✓ " .. count .. " player(s) here. Waiting..."
-                    StatusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+                if count <= limite then
+                    statusLabel.Text = "✓ " .. count .. " players. Aguardando..."
+                    statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
                     task.wait(3)
                 else
-                    joinOnce()
-                    task.wait(5)
+                    joinMelhor()
+                    task.wait(8)
                 end
             end
         end)
     else
-        AutoBtn.Text = "Auto Join: OFF"
-        AutoBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 70)
-        if autoThread then
-            task.cancel(autoThread)
-            autoThread = nil
-        end
-        StatusLabel.Text = "Auto Join stopped."
-        StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        if autoThread then task.cancel(autoThread); autoThread = nil end
+        statusLabel.Text = "Auto Join parado."
+        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     end
 end)
 
--- Initialization
-StatusLabel.Text = "Ready. Set target limit and click Join."
-StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+local lotarEnabled = false
+local lotarThread = nil
+
+BtnLotar.MouseButton1Click:Connect(function()
+    lotarEnabled = not lotarEnabled
+    setBtnOn(BtnLotar, SLotar, lotarEnabled)
+    TLotar.Text = "PULAR SE LOTAR: " .. (lotarEnabled and "ON" or "OFF")
+
+    if lotarEnabled then
+        mostrarNotif("Pular se lotar ligado", 1.5)
+        lotarThread = task.spawn(function()
+            while lotarEnabled and ScreenGui.Parent do
+                local limite = pegarLimite()
+                local count = #Players:GetPlayers()
+                if count > limite then
+                    mostrarNotif("Server lotou (" .. count .. "). Pulando...", 2)
+                    joinMelhor()
+                    task.wait(10)
+                else
+                    task.wait(2)
+                end
+            end
+        end)
+    else
+        if lotarThread then task.cancel(lotarThread); lotarThread = nil end
+    end
+end)
+
+BtnSkip.MouseButton1Click:Connect(function()
+    mostrarNotif("Pulando pro próximo...", 1.5)
+    joinMelhor()
+end)
+
+-- ============================================================
+-- MINIMIZAR
+-- ============================================================
+local isMinimized = false
+local FULL_SIZE = MainFrame.Size
+local MINI_SIZE = UDim2.new(0, 340, 0, 40)
+
+minBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        MainFrame.Size = MINI_SIZE
+        for _, btn in pairs(tabButtons) do btn.Visible = false end
+        for _, c in pairs(tabContainers) do c.Visible = false end
+        minBtn.Text = "+"
+    else
+        MainFrame.Size = FULL_SIZE
+        for _, btn in pairs(tabButtons) do btn.Visible = true end
+        switchTab("Servers")
+        minBtn.Text = "-"
+    end
+end)
+
+print("[HOPPER] Server Hopper v3.1 carregado")
+print("[HOPPER] Discord copiado: " .. DISCORD_LINK)
