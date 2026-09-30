@@ -1,5 +1,5 @@
 -- ============================================================
--- SAFYRA SERVER HOPPER v3.1
+-- SAFYRA SERVER HOPPER v3.2
 -- Autor: Kevin | Discord: _.kevib._
 -- ============================================================
 
@@ -21,7 +21,7 @@ local COR_ACAO_STROKE = Color3.fromRGB(180, 80, 255)
 local DISCORD_LINK = "https://discord.gg/dDqdH8tJdM"
 
 -- ============================================================
--- COPIA DISCORD ASSIM QUE EXECUTA
+-- AUTO-COPY DISCORD AO EXECUTAR
 -- ============================================================
 task.spawn(function()
     task.wait(1)
@@ -94,8 +94,8 @@ else
 end
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 340, 0, 440)
-MainFrame.Position = UDim2.new(0.5, -170, 0.5, -220)
+MainFrame.Size = UDim2.new(0, 340, 0, 480)
+MainFrame.Position = UDim2.new(0.5, -170, 0.5, -240)
 MainFrame.BackgroundColor3 = COR_BG
 MainFrame.BackgroundTransparency = 1
 MainFrame.BorderSizePixel = 0
@@ -230,10 +230,32 @@ local function pingColor(ping)
 end
 
 -- ============================================================
--- FETCH
+-- FETCH / ORDENAÇÃO / FILTRO
 -- ============================================================
-local function fetchServers()
-    -- sortOrder Asc = menos players primeiro
+local ordensOpts = {
+    { label = "MENOS PLAYERS", key = "playing" },
+    { label = "MENOR PING",    key = "ping" },
+    { label = "MAIS RECENTE",  key = "id" }, -- server novo = id lexicográfico maior
+}
+local ordemIdx = 1
+
+local function ordenarLista(lista)
+    local key = ordensOpts[ordemIdx].key
+    table.sort(lista, function(a, b)
+        if key == "playing" then return a.playing < b.playing end
+        if key == "ping" then
+            local pa = (a.ping > 0) and a.ping or 9999
+            local pb = (b.ping > 0) and b.ping or 9999
+            return pa < pb
+        end
+        if key == "id" then return a.id > b.id end
+        return a.playing < b.playing
+    end)
+    return lista
+end
+
+local function fetchServers(maxPing)
+    maxPing = maxPing or 9999
     local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
     local ok, raw = pcall(function() return game:HttpGet(url) end)
     if not ok or not raw or raw == "" then return nil end
@@ -242,62 +264,102 @@ local function fetchServers()
     local currentId = tostring(game.JobId)
     local lista = {}
     for _, s in ipairs(data.data) do
-        if s.id and tostring(s.id) ~= currentId and s.playing < s.maxPlayers then
+        local ping = s.ping or 0
+        if s.id and tostring(s.id) ~= currentId
+           and (s.playing or 0) < (s.maxPlayers or 0)
+           and (maxPing >= 9999 or ping <= 0 or ping <= maxPing) then
             table.insert(lista, {
                 id = tostring(s.id),
                 playing = s.playing or 0,
                 maxPlayers = s.maxPlayers or 0,
-                ping = s.ping or 0,
+                ping = ping,
                 region = s.region or nil
             })
         end
     end
-    table.sort(lista, function(a, b) return a.playing < b.playing end)
-    return lista
+    return ordenarLista(lista)
 end
 
--- Verifica se um server específico tem vaga AGORA
-local function verificarVaga(serverId)
+-- Verificação item 9: re-check de vaga e ping
+local function verificarVaga(serverId, maxPing)
+    maxPing = maxPing or 9999
     local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
     local ok, raw = pcall(function() return game:HttpGet(url) end)
-    if not ok or not raw then return false, nil end
+    if not ok or not raw then return false, nil, "http" end
     local ok2, data = pcall(HttpService.JSONDecode, HttpService, raw)
-    if not ok2 or not data or not data.data then return false, nil end
+    if not ok2 or not data or not data.data then return false, nil, "json" end
     for _, s in ipairs(data.data) do
         if tostring(s.id) == tostring(serverId) then
-            return (s.playing or 0) < (s.maxPlayers or 0), {
+            local playing = s.playing or 0
+            local maxP = s.maxPlayers or 0
+            local ping = s.ping or 0
+            if playing >= maxP then return false, nil, "cheio" end
+            if maxPing < 9999 and ping > 0 and ping > maxPing then
+                return false, nil, "ping_alto"
+            end
+            return true, {
                 id = tostring(s.id),
-                playing = s.playing or 0,
-                maxPlayers = s.maxPlayers or 0,
-                ping = s.ping or 0,
+                playing = playing,
+                maxPlayers = maxP,
+                ping = ping,
                 region = s.region or nil
-            }
+            }, "ok"
         end
     end
-    return false, nil
+    return false, nil, "sumiu"
 end
 
--- Tenta teleportar pra vários candidatos até funcionar
-local function tentarTeleport(lista, maxTentativas)
+-- Tentar teleport em vários candidatos
+local function tentarTeleport(lista, maxTentativas, maxPing)
     maxTentativas = maxTentativas or 5
     local tentativas = 0
+    local motivos = {}
     for _, s in ipairs(lista) do
         if tentativas >= maxTentativas then break end
         tentativas = tentativas + 1
 
-        -- Re-check vaga
-        local temVaga, dados = verificarVaga(s.id)
+        local temVaga, dados, motivo = verificarVaga(s.id, maxPing)
         if temVaga and dados then
             mostrarNotif("Tentando " .. tentativas .. ": " .. dados.playing .. "/" .. dados.maxPlayers, 1.5)
             local ok = pcall(function()
                 TeleportService:TeleportToPlaceInstance(PlaceId, dados.id, LocalPlayer)
             end)
             if ok then return true, dados end
+            table.insert(motivos, "tp_fail")
             task.wait(0.6)
+        else
+            table.insert(motivos, motivo or "?")
         end
     end
-    return false, nil
+    return false, nil, motivos
 end
+
+-- ============================================================
+-- AUTO REJOIN (item 5)
+-- ============================================================
+local RejoinPlace = game.PlaceId
+local RejoinJobId = game.JobId
+local rejoinEnabled = false
+
+local function tentarRejoin()
+    if not rejoinEnabled then return end
+    print("[HOPPER] Caindo — auto rejoin...")
+    task.wait(2)
+    local ok = pcall(function()
+        TeleportService:TeleportToPlaceInstance(RejoinPlace, RejoinJobId, LocalPlayer)
+    end)
+    if not ok then
+        pcall(function()
+            TeleportService:Teleport(RejoinPlace, LocalPlayer)
+        end)
+    end
+end
+
+game:GetService("ScriptContext").Error:Connect(function(msg)
+    if rejoinEnabled and (string.find(msg, "connection") or string.find(msg, "Disconnected") or string.find(msg, "277")) then
+        tentarRejoin()
+    end
+end)
 
 -- ============================================================
 -- ABA SERVERS
@@ -307,7 +369,7 @@ local serversC = tabContainers["Servers"]
 local statusLabel = Instance.new("TextLabel", serversC)
 statusLabel.Size = UDim2.new(1, -10, 0, 36); statusLabel.Position = UDim2.new(0, 5, 0, 5)
 statusLabel.BackgroundColor3 = Color3.fromRGB(10, 10, 15); statusLabel.BackgroundTransparency = 0.3
-statusLabel.Text = "Pronto. Clica em ENTRAR NO MELHOR."
+statusLabel.Text = "Pronto."
 statusLabel.TextColor3 = Color3.fromRGB(200, 220, 255)
 statusLabel.Font = Enum.Font.Gotham; statusLabel.TextSize = 11
 statusLabel.TextWrapped = true; statusLabel.ZIndex = 11
@@ -316,6 +378,21 @@ Instance.new("UICorner", statusLabel).CornerRadius = UDim.new(0, 6)
 local statusPad = Instance.new("UIPadding", statusLabel)
 statusPad.PaddingLeft = UDim.new(0, 8); statusPad.PaddingRight = UDim.new(0, 8)
 
+-- 4 botões: Filtro Player / Filtro Ping / Ordem / Entrar / Ver lista
+local BtnFiltro, SFiltro, TFiltro = makeBtn(serversC, 47, "🎯 PLAYERS: TODOS")
+local BtnPing, SPing, TPing = makeBtn(serversC, 85, "📡 PING: QUALQUER")
+local BtnOrdem, SOrdem, TOrdem = makeBtn(serversC, 123, "🔀 ORDEM: MENOS PLAYERS")
+local BtnEnter, SEnter, TEnter = makeBtn(serversC, 161, "▶ ENTRAR NO MELHOR")
+local BtnFetch, SFetch, TFetch = makeBtn(serversC, 199, "🔍 VER LISTA DE SERVIDORES")
+
+local serversList = Instance.new("Frame", serversC)
+serversList.Size = UDim2.new(1, -10, 0, 0); serversList.Position = UDim2.new(0, 5, 0, 239)
+serversList.BackgroundTransparency = 1; serversList.AutomaticSize = Enum.AutomaticSize.Y
+serversList.ZIndex = 11
+
+local currentServers = {}
+
+-- Opções de filtro
 local filtroOpts = {
     { label = "TODOS",        max = 999 },
     { label = "0-1 PLAYER",   max = 1 },
@@ -325,23 +402,29 @@ local filtroOpts = {
 }
 local filtroIdx = 1
 
-local BtnFiltro, SFiltro, TFiltro = makeBtn(serversC, 47, "🎯 FILTRO: TODOS")
-local BtnEnter, SEnter, TEnter = makeBtn(serversC, 85, "▶ ENTRAR NO MELHOR")
-local BtnFetch, SFetch, TFetch = makeBtn(serversC, 123, "🔍 VER LISTA DE SERVIDORES")
+-- Opções de ping (item 1)
+local pingOpts = {
+    { label = "QUALQUER",  max = 9999 },
+    { label = "PING < 300", max = 300 },
+    { label = "PING < 200", max = 200 },
+    { label = "PING < 100", max = 100 },
+    { label = "PING < 50",  max = 50 },
+}
+local pingIdx = 1
 
-local serversList = Instance.new("Frame", serversC)
-serversList.Size = UDim2.new(1, -10, 0, 0); serversList.Position = UDim2.new(0, 5, 0, 163)
-serversList.BackgroundTransparency = 1; serversList.AutomaticSize = Enum.AutomaticSize.Y
-serversList.ZIndex = 11
-
-local currentServers = {}
+local function pegarMaxPing()
+    return pingOpts[pingIdx].max
+end
 
 local function aplicarFiltro(lista)
     local opt = filtroOpts[filtroIdx]
+    local maxPing = pegarMaxPing()
     local filtrada = {}
     for _, s in ipairs(lista) do
         if s.playing <= opt.max then
-            table.insert(filtrada, s)
+            if maxPing >= 9999 or s.ping <= 0 or s.ping <= maxPing then
+                table.insert(filtrada, s)
+            end
         end
     end
     return filtrada
@@ -351,7 +434,15 @@ local function renderServers(lista)
     for _, c in ipairs(serversList:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
-    if not lista or #lista == 0 then return end
+    if not lista or #lista == 0 then
+        local lbl = Instance.new("TextLabel", serversList)
+        lbl.Size = UDim2.new(1, 0, 0, 40)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = "Nenhum server bate os filtros."
+        lbl.TextColor3 = Color3.fromRGB(150, 150, 170)
+        lbl.Font = Enum.Font.Gotham; lbl.TextSize = 11
+        return
+    end
     for i, s in ipairs(lista) do
         local row = Instance.new("Frame", serversList)
         row.Size = UDim2.new(1, 0, 0, 44); row.Position = UDim2.new(0, 0, 0, (i-1) * 48)
@@ -398,422 +489,9 @@ local function renderServers(lista)
             joinBtn.Text = "..."
             joinBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
 
-            local temVaga, dados = verificarVaga(s.id)
+            local temVaga, dados, motivo = verificarVaga(s.id, pegarMaxPing())
             if not temVaga or not dados then
-                joinBtn.Text = "CHEIO"
+                joinBtn.Text = "FALHA"
                 joinBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-                mostrarNotif("Server cheio. Tenta outro.", 2)
-                task.wait(1.5)
-                joinBtn.Text = "JOIN"
-                joinBtn.BackgroundColor3 = COR_ON
-                return
-            end
-
-            mostrarNotif("Entrando em " .. dados.playing .. "/" .. dados.maxPlayers .. "...", 1.5)
-            local ok = pcall(function()
-                TeleportService:TeleportToPlaceInstance(PlaceId, dados.id, LocalPlayer)
-            end)
-            if not ok then
-                joinBtn.Text = "ERRO"
-                joinBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-                task.wait(1.5)
-                joinBtn.Text = "JOIN"
-                joinBtn.BackgroundColor3 = COR_ON
-            end
-        end)
-    end
-    serversList.Size = UDim2.new(1, -10, 0, #lista * 48)
-end
-
-BtnFiltro.MouseButton1Click:Connect(function()
-    filtroIdx = filtroIdx + 1
-    if filtroIdx > #filtroOpts then filtroIdx = 1 end
-    local opt = filtroOpts[filtroIdx]
-    TFiltro.Text = "🎯 FILTRO: " .. opt.label
-    if #currentServers > 0 then renderServers(aplicarFiltro(currentServers)) end
-    mostrarNotif("Filtro: " .. opt.label, 1.5)
-end)
-
--- ENTRAR NO MELHOR
-BtnEnter.MouseButton1Click:Connect(function()
-    TEnter.Text = "▶ PROCURANDO..."
-    statusLabel.Text = "Procurando o mais vazio..."
-    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-    task.wait(0.1)
-
-    local lista = fetchServers()
-    if not lista or #lista == 0 then
-        statusLabel.Text = "✗ Nenhum server com vaga. Tenta de novo."
-        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        TEnter.Text = "▶ ENTRAR NO MELHOR"
-        return
-    end
-
-    local filtrada = aplicarFiltro(lista)
-    if #filtrada == 0 then filtrada = lista end
-
-    statusLabel.Text = "Tentando teleportar (top 5 candidatos)..."
-    statusLabel.TextColor3 = Color3.fromRGB(120, 180, 255)
-
-    local sucesso, dados = tentarTeleport(filtrada, 5)
-    if not sucesso then
-        statusLabel.Text = "✗ Falha em todos. Server list tá desatualizada?"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-    else
-        statusLabel.Text = "✓ Teleportando pra " .. dados.playing .. "/" .. dados.maxPlayers
-        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
-    end
-    TEnter.Text = "▶ ENTRAR NO MELHOR"
-end)
-
-BtnFetch.MouseButton1Click:Connect(function()
-    TFetch.Text = "🔍 BUSCANDO..."
-    statusLabel.Text = "Buscando servidores..."
-    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-    task.wait(0.1)
-    local lista = fetchServers()
-    if not lista or #lista == 0 then
-        statusLabel.Text = "✗ Nenhum server com vaga disponível."
-        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        TFetch.Text = "🔍 VER LISTA DE SERVIDORES"
-        return
-    end
-    currentServers = lista
-    local filtrada = aplicarFiltro(lista)
-    statusLabel.Text = "✓ " .. #filtrada .. " servers com vaga. Clica JOIN."
-    statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
-    TFetch.Text = "🔍 VER LISTA DE SERVIDORES"
-    renderServers(filtrada)
-end)
-
--- ============================================================
--- ABA AMIGOS
--- ============================================================
-local amigosC = tabContainers["Amigos"]
-
-local amigosStatus = Instance.new("TextLabel", amigosC)
-amigosStatus.Size = UDim2.new(1, -10, 0, 36); amigosStatus.Position = UDim2.new(0, 5, 0, 5)
-amigosStatus.BackgroundColor3 = Color3.fromRGB(10, 10, 15); amigosStatus.BackgroundTransparency = 0.3
-amigosStatus.Text = "Clica em BUSCAR pra ver amigos no jogo."
-amigosStatus.TextColor3 = Color3.fromRGB(200, 220, 255)
-amigosStatus.Font = Enum.Font.Gotham; amigosStatus.TextSize = 11
-amigosStatus.TextWrapped = true; amigosStatus.ZIndex = 11
-amigosStatus.TextXAlignment = Enum.TextXAlignment.Left
-Instance.new("UICorner", amigosStatus).CornerRadius = UDim.new(0, 6)
-local amigosPad = Instance.new("UIPadding", amigosStatus)
-amigosPad.PaddingLeft = UDim.new(0, 8); amigosPad.PaddingRight = UDim.new(0, 8)
-
-local BtnAmigos, SAmigos, TAmigos = makeBtn(amigosC, 47, "🔎 BUSCAR AMIGOS NO JOGO")
-
-local amigosList = Instance.new("Frame", amigosC)
-amigosList.Size = UDim2.new(1, -10, 0, 0); amigosList.Position = UDim2.new(0, 5, 0, 87)
-amigosList.BackgroundTransparency = 1; amigosList.AutomaticSize = Enum.AutomaticSize.Y
-amigosList.ZIndex = 11
-
-local function getAmigos()
-    local amigos = {}
-    local cursor = ""
-    for i = 1, 4 do
-        local url = "https://friends.roblox.com/v1/users/" .. LocalPlayer.UserId .. "/friends?limit=50"
-        if cursor ~= "" then url = url .. "&cursor=" .. cursor end
-        local ok, raw = pcall(function() return game:HttpGet(url) end)
-        if not ok or not raw or raw == "" then break end
-        local ok2, data = pcall(HttpService.JSONDecode, HttpService, raw)
-        if not ok2 or not data or not data.data then break end
-        for _, a in ipairs(data.data) do
-            table.insert(amigos, { id = a.id, name = a.name, display = a.displayName })
-        end
-        cursor = data.nextPageCursor
-        if not cursor or cursor == "" then break end
-    end
-    return amigos
-end
-
-local function getPresencas(userIds)
-    if #userIds == 0 then return {} end
-    local ok, raw = pcall(function()
-        return game:HttpPost("https://presence.roblox.com/v1/presence/users",
-            HttpService:JSONEncode({ userIds = userIds }))
-    end)
-    if not ok or not raw or raw == "" then return {} end
-    local ok2, data = pcall(HttpService.JSONDecode, HttpService, raw)
-    if not ok2 or not data or not data.userPresences then return {} end
-    local map = {}
-    for _, p in ipairs(data.userPresences) do
-        map[p.userId] = p
-    end
-    return map
-end
-
-BtnAmigos.MouseButton1Click:Connect(function()
-    TAmigos.Text = "🔎 BUSCANDO..."
-    amigosStatus.Text = "Buscando amigos..."
-    amigosStatus.TextColor3 = Color3.fromRGB(255, 200, 50)
-    task.wait(0.1)
-
-    for _, c in ipairs(amigosList:GetChildren()) do
-        if c:IsA("Frame") then c:Destroy() end
-    end
-
-    local amigos = getAmigos()
-    if #amigos == 0 then
-        amigosStatus.Text = "✗ Não consegui buscar. HTTP Requests ligado?"
-        amigosStatus.TextColor3 = Color3.fromRGB(255, 100, 100)
-        TAmigos.Text = "🔎 BUSCAR AMIGOS NO JOGO"
-        return
-    end
-
-    local ids = {}
-    for _, a in ipairs(amigos) do table.insert(ids, a.id) end
-
-    local presencas = {}
-    for i = 1, #ids, 50 do
-        local bloco = {}
-        for j = i, math.min(i + 49, #ids) do
-            table.insert(bloco, ids[j])
-        end
-        local map = getPresencas(bloco)
-        for k, v in pairs(map) do presencas[k] = v end
-    end
-
-    local noJogo = {}
-    for _, a in ipairs(amigos) do
-        local p = presencas[a.id]
-        if p and p.userPresenceType == 2 and p.placeId == PlaceId then
-            table.insert(noJogo, {
-                id = a.id,
-                name = a.name,
-                display = a.display,
-                gameId = p.gameId,
-                lastLocation = p.lastLocation
-            })
-        end
-    end
-
-    if #noJogo == 0 then
-        amigosStatus.Text = "Nenhum amigo no jogo agora (" .. #amigos .. " checados)."
-        amigosStatus.TextColor3 = Color3.fromRGB(255, 200, 50)
-        TAmigos.Text = "🔎 BUSCAR AMIGOS NO JOGO"
-        return
-    end
-
-    amigosStatus.Text = "✓ " .. #noJogo .. " amigo(s) no jogo. Clica JOIN."
-    amigosStatus.TextColor3 = Color3.fromRGB(100, 255, 150)
-    TAmigos.Text = "🔎 BUSCAR AMIGOS NO JOGO"
-
-    for i, a in ipairs(noJogo) do
-        local row = Instance.new("Frame", amigosList)
-        row.Size = UDim2.new(1, 0, 0, 44); row.Position = UDim2.new(0, 0, 0, (i-1) * 48)
-        row.BackgroundColor3 = COR_BG_BTN; row.BorderSizePixel = 0
-        row.ZIndex = 11
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
-        local rowStroke = Instance.new("UIStroke", row)
-        rowStroke.Color = Color3.fromRGB(120, 200, 255); rowStroke.Thickness = 1; rowStroke.Transparency = 0.3
-
-        local nome = Instance.new("TextLabel", row)
-        nome.Size = UDim2.new(1, -80, 0, 18); nome.Position = UDim2.new(0, 10, 0, 5)
-        nome.BackgroundTransparency = 1
-        nome.Text = a.display ~= "" and (a.display .. " (@" .. a.name .. ")") or a.name
-        nome.TextColor3 = Color3.fromRGB(255, 255, 255)
-        nome.Font = Enum.Font.GothamBold; nome.TextSize = 11
-        nome.TextXAlignment = Enum.TextXAlignment.Left; nome.ZIndex = 12
-
-        local loc = Instance.new("TextLabel", row)
-        loc.Size = UDim2.new(1, -80, 0, 14); loc.Position = UDim2.new(0, 10, 0, 23)
-        loc.BackgroundTransparency = 1
-        loc.Text = "🎮 " .. (a.lastLocation or "?")
-        loc.TextColor3 = Color3.fromRGB(150, 200, 255)
-        loc.Font = Enum.Font.Gotham; loc.TextSize = 10
-        loc.TextXAlignment = Enum.TextXAlignment.Left; loc.ZIndex = 12
-
-        local jb = Instance.new("TextButton", row)
-        jb.Size = UDim2.new(0, 58, 0, 30); jb.Position = UDim2.new(1, -66, 0.5, -15)
-        jb.BackgroundColor3 = COR_ON; jb.BorderSizePixel = 0
-        jb.Text = "JOIN"; jb.TextColor3 = Color3.fromRGB(255, 255, 255)
-        jb.Font = Enum.Font.GothamBlack; jb.TextSize = 11
-        jb.AutoButtonColor = false; jb.ZIndex = 12
-        Instance.new("UICorner", jb).CornerRadius = UDim.new(0, 5)
-        local jbS = Instance.new("UIStroke", jb)
-        jbS.Color = COR_ON_STROKE; jbS.Thickness = 1; jbS.Transparency = 0.3
-
-        jb.MouseButton1Click:Connect(function()
-            if not a.gameId or a.gameId == "" then
-                mostrarNotif("Sem gameId. Amigo em outro server.", 2)
-                return
-            end
-            jb.Text = "..."
-            jb.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
-            mostrarNotif("Entrando no server do " .. a.name .. "...", 1.5)
-            local ok = pcall(function()
-                TeleportService:TeleportToPlaceInstance(PlaceId, a.gameId, LocalPlayer)
-            end)
-            if not ok then
-                jb.Text = "ERRO"
-                jb.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-                task.wait(1.5)
-                jb.Text = "JOIN"
-                jb.BackgroundColor3 = COR_ON
-            end
-        end)
-    end
-    amigosList.Size = UDim2.new(1, -10, 0, #noJogo * 48)
-end)
-
--- ============================================================
--- ABA CONFIG
--- ============================================================
-local cfgC = tabContainers["Config"]
-
-local BtnAuto, SAuto, TAuto = makeBtn(cfgC, 5, "AUTO JOIN: OFF")
-local BtnLotar, SLotar, TLotar = makeBtn(cfgC, 45, "PULAR SE LOTAR: OFF")
-local BtnSkip, SSkip, TSkip = makeBtn(cfgC, 85, "PULAR PRO PRÓXIMO AGORA")
-local BtnDiscord, SDiscord, TDiscord = makeBtn(cfgC, 125, "📋 COPIAR DISCORD")
-
-local maxPlayersLabel = Instance.new("TextLabel", cfgC)
-maxPlayersLabel.Size = UDim2.new(1, -10, 0, 18); maxPlayersLabel.Position = UDim2.new(0, 5, 0, 165)
-maxPlayersLabel.BackgroundTransparency = 1
-maxPlayersLabel.Text = "LIMITE DE PLAYERS (AUTO/PULAR SE LOTAR):"
-maxPlayersLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
-maxPlayersLabel.Font = Enum.Font.GothamBold; maxPlayersLabel.TextSize = 10
-maxPlayersLabel.TextXAlignment = Enum.TextXAlignment.Left; maxPlayersLabel.ZIndex = 11
-
-local maxPlayersBox = Instance.new("TextBox", cfgC)
-maxPlayersBox.Size = UDim2.new(1, -10, 0, 32); maxPlayersBox.Position = UDim2.new(0, 5, 0, 188)
-maxPlayersBox.BackgroundColor3 = COR_BG_BTN; maxPlayersBox.BorderSizePixel = 0
-maxPlayersBox.Text = "3"; maxPlayersBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-maxPlayersBox.Font = Enum.Font.GothamBold; maxPlayersBox.TextSize = 14
-maxPlayersBox.ClearTextOnFocus = false; maxPlayersBox.ZIndex = 11
-Instance.new("UICorner", maxPlayersBox).CornerRadius = UDim.new(0, 6)
-local mps = Instance.new("UIStroke", maxPlayersBox)
-mps.Color = COR_BTN_STROKE; mps.Thickness = 1; mps.Transparency = 0.5
-
-BtnDiscord.MouseButton1Click:Connect(function()
-    local ok = false
-    if setclipboard then ok = pcall(setclipboard, DISCORD_LINK)
-    elseif toclipboard then ok = pcall(toclipboard, DISCORD_LINK) end
-    if ok then mostrarNotif("Discord copiado!", 2.5)
-    else mostrarNotif("Link: discord.gg/dDqdH8tJdM", 4) end
-end)
-
--- ============================================================
--- LÓGICA
--- ============================================================
-local autoEnabled = false
-local autoThread = nil
-
-local function pegarLimite()
-    return math.max(1, math.floor(tonumber(maxPlayersBox.Text) or 3))
-end
-
-local function joinMelhor()
-    local limite = pegarLimite()
-    local count = #Players:GetPlayers()
-
-    if count <= limite then
-        statusLabel.Text = "✓ Server atual tem " .. count .. " player(s)."
-        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
-        return false
-    end
-
-    local lista = fetchServers()
-    if not lista or #lista == 0 then
-        statusLabel.Text = "✗ Nenhum server com vaga."
-        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        return false
-    end
-
-    local filtrada = aplicarFiltro(lista)
-    if #filtrada == 0 then filtrada = lista end
-
-    statusLabel.Text = "Tentando top 5 candidatos..."
-    statusLabel.TextColor3 = Color3.fromRGB(120, 180, 255)
-
-    local ok = tentarTeleport(filtrada, 5)
-    return ok
-end
-
-BtnAuto.MouseButton1Click:Connect(function()
-    autoEnabled = not autoEnabled
-    setBtnOn(BtnAuto, SAuto, autoEnabled)
-    TAuto.Text = "AUTO JOIN: " .. (autoEnabled and "ON" or "OFF")
-
-    if autoEnabled then
-        mostrarNotif("Auto Join ligado", 1.5)
-        autoThread = task.spawn(function()
-            while autoEnabled and ScreenGui.Parent do
-                local limite = pegarLimite()
-                local count = #Players:GetPlayers()
-                if count <= limite then
-                    statusLabel.Text = "✓ " .. count .. " players. Aguardando..."
-                    statusLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
-                    task.wait(3)
-                else
-                    joinMelhor()
-                    task.wait(8)
-                end
-            end
-        end)
-    else
-        if autoThread then task.cancel(autoThread); autoThread = nil end
-        statusLabel.Text = "Auto Join parado."
-        statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-    end
-end)
-
-local lotarEnabled = false
-local lotarThread = nil
-
-BtnLotar.MouseButton1Click:Connect(function()
-    lotarEnabled = not lotarEnabled
-    setBtnOn(BtnLotar, SLotar, lotarEnabled)
-    TLotar.Text = "PULAR SE LOTAR: " .. (lotarEnabled and "ON" or "OFF")
-
-    if lotarEnabled then
-        mostrarNotif("Pular se lotar ligado", 1.5)
-        lotarThread = task.spawn(function()
-            while lotarEnabled and ScreenGui.Parent do
-                local limite = pegarLimite()
-                local count = #Players:GetPlayers()
-                if count > limite then
-                    mostrarNotif("Server lotou (" .. count .. "). Pulando...", 2)
-                    joinMelhor()
-                    task.wait(10)
-                else
-                    task.wait(2)
-                end
-            end
-        end)
-    else
-        if lotarThread then task.cancel(lotarThread); lotarThread = nil end
-    end
-end)
-
-BtnSkip.MouseButton1Click:Connect(function()
-    mostrarNotif("Pulando pro próximo...", 1.5)
-    joinMelhor()
-end)
-
--- ============================================================
--- MINIMIZAR
--- ============================================================
-local isMinimized = false
-local FULL_SIZE = MainFrame.Size
-local MINI_SIZE = UDim2.new(0, 340, 0, 40)
-
-minBtn.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    if isMinimized then
-        MainFrame.Size = MINI_SIZE
-        for _, btn in pairs(tabButtons) do btn.Visible = false end
-        for _, c in pairs(tabContainers) do c.Visible = false end
-        minBtn.Text = "+"
-    else
-        MainFrame.Size = FULL_SIZE
-        for _, btn in pairs(tabButtons) do btn.Visible = true end
-        switchTab("Servers")
-        minBtn.Text = "-"
-    end
-end)
-
-print("[HOPPER] Server Hopper v3.1 carregado")
-print("[HOPPER] Discord copiado: " .. DISCORD_LINK)
+                mostrarNotif("Falha: " .. tostring(motivo), 2)
+                task.wait(
